@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-import sip_replay_v14 as replay
-import sip_shadow_sim_v14 as sim
+import orb_replay_v15 as replay
+import orb_sim_v15 as sim
 import us_orb_scanner_v03 as scanner
 import us_orb_test_v02 as base
 
@@ -120,7 +120,7 @@ def replayed(tmp_path_factory):
 
 
 def day_folder(result):
-    (folder,) = (result.folder / 'drive' / 'shadow_replay_v1_4' / DAY).iterdir()
+    (folder,) = (result.folder / 'drive' / 'shadow_replay_v1_5' / DAY).iterdir()
     return folder
 
 
@@ -155,7 +155,7 @@ def test_replay_day_is_complete_and_order_free(replayed):
     manifest = load(folder, 'manifest.json')
     assert manifest['mode'] == 'REPLAY_VIRTUAL_PORTFOLIO' and manifest['replay']['fingerprint']
     assert set(manifest['code_sha256']) >= {'us_orb_test_v02.py', 'us_orb_scanner_v03.py',
-                                            'shadow_portfolio_v14.py', 'sip_shadow_sim_v14.py'}
+                                            'orb_portfolio_v15.py', 'orb_sim_v15.py'}
     assert not (folder / 'failed.json').exists()
 
 
@@ -177,7 +177,7 @@ def test_summary(replayed):
 def test_completed_day_is_reused(replayed):
     calls = replayed.market.calls
     replay.run_replay(replayed.store, replayed.folder / 'drive', C, S, DAY, DAY)
-    assert len(list((replayed.folder / 'drive' / 'shadow_replay_v1_4' / DAY).iterdir())) == 1
+    assert len(list((replayed.folder / 'drive' / 'shadow_replay_v1_5' / DAY).iterdir())) == 1
     assert replayed.market.calls == calls
 
 

@@ -7,9 +7,9 @@ import json
 
 import pandas as pd
 
-import shadow_cockpit_v142 as cockpit_ui
-import sip_replay_v14 as replay
-import sip_shadow_sim_v14 as sim
+import orb_cockpit_v15 as cockpit_ui
+import orb_replay_v15 as replay
+import orb_sim_v15 as sim
 from test_replay_v14 import C, NY, S, SyntheticMarket, make_store
 
 LIVE_DAY = '2026-09-23'   # after the fixed SIP control day 2026-09-22
@@ -41,7 +41,7 @@ def test_live_path_runs_a_full_day(tmp_path):
     out = sim.run_dryrun(replay.ReplayBroker(store, clock), replay.ReplayData(store, clock),
                          tmp_path / 'drive', C, S, settings, clock=clock,
                          universe_loader=lambda broker: universe, replay=None, cockpit=ui)
-    assert out.parent.parent.name == 'shadow_sim_v1_4'
+    assert out.parent.parent.name == 'shadow_sim_v1_5'
     load = lambda name: json.loads((out / name).read_text())
     assert load('manifest.json')['mode'] == 'FLEXIBLE_START_VIRTUAL_PORTFOLIO'
     assert load('sip_access_check.json')['result'] == 'RECENT_SIP_BARS_AND_QUOTES_ACCEPTED'
@@ -54,7 +54,9 @@ def test_live_path_runs_a_full_day(tmp_path):
     # live: one view per computed minute (09:46-15:14 signals, then held-position minutes)
     assert ui.stages.count('SIGNALPRUEFUNG') == 329
     assert ui.stages[0] == 'WARTE_AUF_SIGNALFENSTER' and ui.stages[-1] == 'FINISHED'
-    assert 'GEPLANTER_TAGESABSCHLUSS' in ui.stages
+    # V1.5: the view keeps moving while waiting (09:20-09:46) and after the close (15:30-16:00)
+    assert ui.stages.count('WARTE_AUF_SIGNALFENSTER') >= 25
+    assert ui.stages.count('GEPLANTER_TAGESABSCHLUSS') >= 29
     assert load('cockpit_snapshot.json')['stage'] == 'FINISHED'
     assert 'Start-Snapshot des Alpaca-Paper-Kontos' in (out / 'cockpit.html').read_text()
     assert 'http-equiv="refresh"' in (tmp_path / 'cockpit_latest.html').read_text()

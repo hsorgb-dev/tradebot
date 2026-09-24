@@ -11,7 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOKS = [ROOT / 'US_Aktien_Bot_V1_2_Ganztag_Shadow_Simulation.ipynb',
              ROOT / 'US_Aktien_Bot_V1_3_SIP_Shadow_Simulation.ipynb',
              # V1.4.3 supersedes V1.4/V1.4.2 (same module names, so only one is tested)
-             ROOT / 'US_Aktien_Bot_V1_4_3_SIP_Cockpit.ipynb']
+             ROOT / 'US_Aktien_Bot_V1_4_3_SIP_Cockpit.ipynb',
+             ROOT / 'US_Aktien_Bot_V1_5_Dual_IEX_SIP_Cockpit.ipynb']
 MARKER = '%%writefile /content/'
 
 

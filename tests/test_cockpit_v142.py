@@ -8,9 +8,9 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-import shadow_cockpit_v142 as cockpit_ui
-import shadow_portfolio_v14 as shadow
-import sip_replay_v14 as replay
+import orb_cockpit_v15 as cockpit_ui
+import orb_portfolio_v15 as shadow
+import orb_replay_v15 as replay
 import us_orb_test_v02 as base
 from test_replay_v14 import C, DAY, NY, S, SyntheticMarket, aaa_path, make_store
 
@@ -177,7 +177,7 @@ def test_failed_start_leaves_readable_failed_cockpit(tmp_path):
     with pytest.raises(ValueError, match='Keine zulässigen Aktien'):
         replay.replay_day(store, DAY, tmp_path / 'drive', C, S,
                           replay.replay_settings_default(), cockpit=cockpit)
-    (folder,) = (tmp_path / 'drive' / 'shadow_replay_v1_4' / DAY).iterdir()
+    (folder,) = (tmp_path / 'drive' / 'shadow_replay_v1_5' / DAY).iterdir()
     assert load(folder, 'cockpit_snapshot.json')['stage'] == 'FAILED'
     assert 'Lauf mit Fehler beendet' in (folder / 'cockpit.html').read_text(encoding='utf-8')
     assert (folder / 'failed.json').exists()

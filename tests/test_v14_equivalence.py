@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 import sip_shadow_sim_v13 as old
-import sip_shadow_sim_v14 as new
+import orb_sim_v15 as new
 import us_orb_test_v02 as base
 
 OPEN = pd.Timestamp('2026-09-15 13:30', tz='UTC')

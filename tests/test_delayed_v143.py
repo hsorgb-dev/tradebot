@@ -7,8 +7,8 @@ import json
 import pandas as pd
 import pytest
 
-import shadow_cockpit_v142 as cockpit_ui
-import sip_replay_v14 as replay
+import orb_cockpit_v15 as cockpit_ui
+import orb_replay_v15 as replay
 from test_live_path_v143 import LIVE_DAY, CountingCockpit
 from test_replay_v14 import C, S, SyntheticMarket, make_store
 
@@ -76,7 +76,7 @@ def test_delayed_run_full_day(tmp_path):
     out = replay.run_delayed(paper, market, tmp_path / 'drive', C, S, cockpit=ui,
                              base_clock=wall, universe_loader=lambda broker: universe)
     load = lambda name: json.loads((out / name).read_text())
-    assert out.parent.parent.name == 'shadow_delayed_v1_4'
+    assert out.parent.parent.name == 'shadow_delayed_v1_5'
     manifest = load('manifest.json')
     assert manifest['mode'] == 'DELAYED_SIP_VIRTUAL_PORTFOLIO' and manifest['replay']['lag_minutes'] == 16
     assert load('sip_access_check.json')['result'] == 'DELAYED_HISTORICAL_SIP'
