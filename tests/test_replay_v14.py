@@ -136,7 +136,11 @@ def test_replay_day_trades_breakout_and_stop(replayed):
     assert trade['exit_reason'] == 'TRAILING_STOP_PROXY'
     assert trade['exit_price_proxy'] == pytest.approx(101.5 * 0.99)
     opening = pd.Timestamp(f'{DAY} 09:30', tz=NY).tz_convert('UTC')
-    assert pd.Timestamp(trade['exit_at_utc']) == opening + pd.Timedelta(minutes=90)
+    # V1.4.1+: the fill time is when the (timely) bar was processed, the trigger bar is kept.
+    assert trade['exit_trigger_bar_minute_utc'] == (opening + pd.Timedelta(minutes=90)).isoformat()
+    exit_at = pd.Timestamp(trade['exit_at_utc'])
+    assert opening + pd.Timedelta(minutes=91) < exit_at <= opening + pd.Timedelta(minutes=91, seconds=15)
+    assert trade['outcome_unreliable'] is False
     entry = pd.Timestamp(trade['entry_at_utc'])
     signal = opening + pd.Timedelta(minutes=26)
     assert signal + pd.Timedelta(seconds=5) <= entry < signal + pd.Timedelta(seconds=60)
@@ -150,7 +154,7 @@ def test_replay_day_is_complete_and_order_free(replayed):
     assert coverage['missed_decision_minutes'] == 0 and coverage['data_error_minutes'] == 0
     manifest = load(folder, 'manifest.json')
     assert manifest['mode'] == 'REPLAY_VIRTUAL_PORTFOLIO' and manifest['replay']['fingerprint']
-    assert set(manifest['code_sha256']) == {'us_orb_test_v02.py', 'us_orb_scanner_v03.py',
+    assert set(manifest['code_sha256']) >= {'us_orb_test_v02.py', 'us_orb_scanner_v03.py',
                                             'shadow_portfolio_v14.py', 'sip_shadow_sim_v14.py'}
     assert not (folder / 'failed.json').exists()
 

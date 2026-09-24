@@ -10,7 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOKS = [ROOT / 'US_Aktien_Bot_V1_2_Ganztag_Shadow_Simulation.ipynb',
              ROOT / 'US_Aktien_Bot_V1_3_SIP_Shadow_Simulation.ipynb',
-             ROOT / 'US_Aktien_Bot_V1_4_SIP_Replay.ipynb']
+             # V1.4.2 supersedes V1.4 (same module names, so only one is tested)
+             ROOT / 'US_Aktien_Bot_V1_4_2_SIP_Cockpit.ipynb']
 MARKER = '%%writefile /content/'
 
 
