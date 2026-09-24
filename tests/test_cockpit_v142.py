@@ -307,3 +307,131 @@ def test_slow_bar_request_does_not_make_timely_bars_late(tmp_path, without_cockp
     assert trade['exit_reason'] == 'TRAILING_STOP_PROXY' and trade['outcome_unreliable'] is False
     kinds = [e['kind'] for e in load(run.folder, 'shadow_events.json')]
     assert 'LATE_HELD_BAR_STOP_NOT_BACKDATED' not in kinds
+
+
+# ---------- browser view (live link + cockpit_latest.html) ----------
+
+def http_get(port, path):
+    import urllib.error
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f'http://127.0.0.1:{port}{path}', timeout=5) as answer:
+            return answer.status, answer.headers.get('Content-Type'), answer.read().decode('utf-8')
+    except urllib.error.HTTPError as exc:
+        return exc.code, None, ''
+
+
+def test_live_link_serves_newest_view_read_only(tmp_path):
+    ui = cockpit_ui.Cockpit(display_enabled=False)
+    server = cockpit_ui.serve_cockpit(ui, port=18765)
+    try:
+        port = server.server_address[1]
+        status, kind, body = http_get(port, '/')
+        assert status == 200 and 'Warte auf den ersten Cockpit-Stand' in body
+        assert 'http-equiv="refresh"' in body
+        portfolio = shadow.ShadowPortfolio(C, OPEN, OPEN + pd.Timedelta(hours=6))
+        ui.update(tmp_path, portfolio, minute(20), minute(20), 'SIGNALPRUEFUNG', 'live')
+        status, kind, body = http_get(port, '/')
+        assert status == 200 and kind.startswith('text/html')
+        assert 'virtuelles Cockpit' in body and 'http-equiv="refresh" content="15"' in body
+        assert 'orb-age' in body and 'data-replay="0"' in body
+        status, kind, body = http_get(port, '/snapshot.json')
+        assert status == 200 and json.loads(body)['stage'] == 'SIGNALPRUEFUNG'
+        assert http_get(port, '/../shadow_state.json')[0] == 404
+        assert http_get(port, '/cockpit.html')[0] == 404
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_second_server_uses_next_free_port(tmp_path):
+    ui = cockpit_ui.Cockpit(display_enabled=False)
+    first = cockpit_ui.serve_cockpit(ui, port=18785)
+    second = cockpit_ui.serve_cockpit(ui, port=first.server_address[1])
+    try:
+        assert second.server_address[1] != first.server_address[1]
+    finally:
+        for server in (first, second):
+            server.shutdown()
+            server.server_close()
+
+
+def test_open_browser_view_uses_colab_port_window(tmp_path, monkeypatch):
+    import sys
+    import types
+    calls = []
+    output = types.SimpleNamespace(serve_kernel_port_as_window=lambda port, path='/', anchor_text=None:
+                                   calls.append((port, path, anchor_text)))
+    colab = types.ModuleType('google.colab')
+    colab.output = output
+    google = types.ModuleType('google')
+    google.colab = colab
+    monkeypatch.setitem(sys.modules, 'google', google)
+    monkeypatch.setitem(sys.modules, 'google.colab', colab)
+    server = cockpit_ui.open_browser_view(cockpit_ui.Cockpit(display_enabled=False), port=18805)
+    try:
+        assert calls == [(server.server_address[1], '/', 'Cockpit im Browser öffnen')]
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_latest_file_follows_the_newest_day_and_refreshes(tmp_path):
+    latest = tmp_path / 'cockpit_latest.html'
+    ui = cockpit_ui.Cockpit(display_enabled=False, latest_path=latest)
+    portfolio = shadow.ShadowPortfolio(C, OPEN, OPEN + pd.Timedelta(hours=6))
+    ui.update(tmp_path / 'day1', portfolio, minute(20), minute(20), 'FINISHED', 'replay')
+    ui.update(tmp_path / 'day2', portfolio, minute(21), minute(21), 'SIGNALPRUEFUNG', 'replay',
+              signals=[dict(symbol='ZZZ', status='VOLUME_REJECT', decision_time_utc=minute(21))])
+    page = latest.read_text(encoding='utf-8')
+    assert 'ZZZ' in page and 'http-equiv="refresh"' in page and 'data-replay="1"' in page
+    day_page = (tmp_path / 'day2' / 'cockpit.html').read_text(encoding='utf-8')
+    assert 'http-equiv="refresh"' not in day_page      # the day record stays a static page
+
+
+def test_drive_write_error_does_not_switch_the_cockpit_off(tmp_path):
+    blocker = tmp_path / 'not_a_folder'
+    blocker.write_text('x')
+    ui = cockpit_ui.Cockpit(display_enabled=False, latest_path=blocker / 'cockpit_latest.html')
+    portfolio = shadow.ShadowPortfolio(C, OPEN, OPEN + pd.Timedelta(hours=6))
+    assert ui.update(tmp_path / 'day', portfolio, minute(20), minute(20), 'SIGNALPRUEFUNG', 'live')
+    assert ui.update(tmp_path / 'day', portfolio, minute(21), minute(21), 'SIGNALPRUEFUNG', 'live')
+    assert ui.write_errors == 2 and (tmp_path / 'day' / 'cockpit.html').exists()
+    assert 'virtuelles Cockpit' in ui.latest_browser_page
+
+
+def test_quiet_stages_do_not_raise_a_stall_warning():
+    portfolio = shadow.ShadowPortfolio(C, OPEN, OPEN + pd.Timedelta(hours=6))
+    for stage, quiet in (('WARTE_AUF_SIGNALFENSTER', '1'), ('SIGNALPRUEFUNG', '0'),
+                         ('GEPLANTER_TAGESABSCHLUSS', '1'), ('FINISHED', '1')):
+        page = cockpit_ui.render_html(cockpit_ui.snapshot(portfolio, minute(20), minute(20),
+                                                          stage, 'live', 1))
+        assert f'data-quiet="{quiet}"' in page
+
+
+# ---------- V1.4.3: entry lock only while unresolved, saved final view ----------
+
+def test_entry_lock_ends_when_the_gap_is_resolved():
+    p = held_position()
+    p.update(minute(24), pd.DataFrame([], columns=replay.BAR_COLUMNS + ['feed']),
+             minute(24) + pd.Timedelta(seconds=5))            # bar 21 settled as missing
+    assert p.entry_data_blocked()
+    good = pd.DataFrame([bar(i, 100.2, 100.3) for i in (21, 22, 23, 24)])
+    p.update(minute(25), good.iloc[1:], minute(25) + pd.Timedelta(seconds=5))
+    now = minute(25) + pd.Timedelta(seconds=6)
+    p.check_gap_exits(now, {'AAA': dict(quote_result='PASS', bid=100.25,
+                                        quote_time_utc=now.isoformat())})
+    assert not p.entry_data_blocked() and p.data_degraded   # audit flag stays
+
+
+def test_saved_final_view_is_rerendered_without_replaying(with_cockpit, tmp_path):
+    import shutil
+    folder = tmp_path / 'day'
+    shutil.copytree(with_cockpit.folder, folder)
+    (folder / 'cockpit.html').unlink()
+    ui = RecordingCockpit()
+    replay.refresh_saved_cockpit(folder, ui)
+    (view,) = ui.painted
+    assert view['stage'] == 'FINISHED' and view['closed_trades'][0]['symbol'] == 'AAA'
+    assert (folder / 'cockpit.html').exists()
+    assert load(folder, 'cockpit_render.json')['strategy_replayed'] is False
