@@ -15,6 +15,16 @@
   - keine rückdatierten Stops
   - Cockpit mit Browser-Link
 
+## 1a. Freigegebene Regeländerung (Entscheidung vom 24.09.2026)
+
+**Anlass:** Im verzögerten V1.4.3-Lauf vom 24.09. wurden GILD und LIN mit `NOT_CHECKABLE` abgelehnt, obwohl jeweils 19 von 20 RVOL-Vergleichstagen gültig waren (GILD: 03.09. ungültig, LIN: 28.08. ungültig, jeweils `ValueError`).
+
+**Änderung:** `DryRunSettings.min_rvol_reference_days = 18`. Der RVOL wird aus dem Durchschnitt der gültigen Vergleichstage berechnet, wenn mindestens 18 von 20 gültig sind. Mit dem Wert 20 gilt die alte Regel. Die hash-geprüfte Konfiguration (v02) bleibt unverändert.
+
+**Nachvollziehbarkeit:** Zu jedem ungültigen Vergleichstag steht jetzt der genaue Grund in `reference_checks/*.csv`, Spalte `error_detail`. Das umfasst Uhrzeit und Werte einer widersprüchlichen Kerze sowie die Trade-Bedingungen einer nicht erklärbaren fehlenden Minute.
+
+**Tests:** `tests/test_rvol_reference_v15.py`, 5 Fälle: 19 von 20 gültig ergibt `VOLUME_PASS` mit RVOL über 19 Tage; die alte Regel mit 20 bleibt verfügbar; 17 von 20 bleibt `NOT_CHECKABLE`; Fehlerdetails; Prüfung des Einstellwerts.
+
 ## 2. Architektur
 
 | Modul | Rolle | Änderung gegenüber V1.4.3 |
@@ -31,7 +41,7 @@
 
 **Gleiche Aktiengrundgesamtheit:** Beide Bots erhalten dieselbe Nasdaq-100-Liste. Der Liquiditätsfilter über 20 Vortage bleibt für beide historisches SIP.
 
-## 3. Tests (pytest, 95 grün unter pandas 2.2 und 3.0)
+## 3. Tests (pytest, 100 grün unter pandas 2.2 und 3.0)
 
 | Abnahmekriterium (Auftrag §13) | Test | Ergebnis |
 |---|---|---|
