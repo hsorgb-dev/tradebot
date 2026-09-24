@@ -1,4 +1,4 @@
-"""Tests run against the modules exactly as the notebook writes them."""
+"""Tests run against the modules exactly as the notebooks write them."""
 import sys
 from pathlib import Path
 
@@ -9,6 +9,9 @@ import notebook_modules  # noqa: E402
 
 
 def pytest_configure(config):
-    target = Path(config.rootpath) / '.pytest_cache' / 'notebook_modules'
-    notebook_modules.extract(target)
-    sys.path.insert(0, str(target))
+    # Module names differ per version (v12/v13), so all can share sys.path;
+    # the hash-pinned v02/v03 modules are identical in every notebook.
+    for number, notebook in enumerate(notebook_modules.NOTEBOOKS):
+        target = Path(config.rootpath) / '.pytest_cache' / f'notebook_modules_{number}'
+        notebook_modules.extract(notebook, target)
+        sys.path.insert(0, str(target))
