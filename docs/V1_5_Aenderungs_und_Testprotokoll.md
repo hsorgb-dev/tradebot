@@ -41,7 +41,7 @@
 
 **Gleiche Aktiengrundgesamtheit:** Beide Bots erhalten dieselbe Nasdaq-100-Liste. Der Liquiditätsfilter über 20 Vortage bleibt für beide historisches SIP.
 
-## 3. Tests (pytest, 100 grün unter pandas 2.2 und 3.0)
+## 3. Tests (pytest, 106 grün unter pandas 2.2 und 3.0)
 
 | Abnahmekriterium (Auftrag §13) | Test | Ergebnis |
 |---|---|---|
@@ -77,6 +77,48 @@
 - **Ratenlimit des kostenlosen Kontos (200/Min.):** Im `DUAL_MODE` fragen beide Bots parallel ab. Im Normalbetrieb sind es grob 10–15 Anfragen pro Minute, dazu kommen Spitzen beim Nachladen der RVOL-Referenzen und bei der Nachsimulation.
 - **Colab-Abbruch:** Es gibt keine garantierte Glattstellung. Die Trailing-Stops beim Broker gelten nur für den Tag.
 - **Gebühren:** Alpaca-Paper berechnet keine Kommissionen. Kosten fließen nur über das 10-Basispunkte-Stressszenario ein, ohne Doppelzählung mit dem Bid/Ask-Modell.
+
+## 4a. Replay-Variantenvergleich (Stopabstand, Wiedereinstieg)
+
+**Zweck:** Nur zur Auswertung. Die Live-Strategie bleibt unverändert: Trailing 1 %, ein Einstieg je Aktie und Tag. Die Standardwerte `max_reentries=0` und `atr_trailing_multiple=0` entsprechen genau dem bisherigen Verhalten.
+
+**Notebook:** `US_Aktien_Bot_V1_5_Variantenvergleich.ipynb`. Modul `orb_variants_v15.py`, erstellt mit `python3 tools/build_v15.py <module_dir> <cells_dir> <ziel.ipynb>`.
+
+**Ablauf:**
+1. Ein normaler SIP-Replay je Tag (`run_replay`) erfasst Signale, Ranking und Einstiegsquotes.
+2. Jede Variante simuliert nur das Portfolio mit denselben Minutenkerzen neu. Dafür sind keine weiteren API-Abrufe nötig.
+
+**Varianten:**
+
+| Name | Stop | Wiedereinstieg |
+|---|---|---|
+| `A_1.0pct` (Basis) | 1,0 % | nein |
+| `A_1.5pct` | 1,5 % | nein |
+| `A_2.0pct` | 2,0 % | nein |
+| `A_ATR` | 0,5 × Tagesspanne (ATR 20 T.), 0,75–3 % | nein |
+| `B_1.0pct_reentry` | 1,0 % | max. 1, nur nach Stop, ≥15 Min. Pause, neues vollständig geprüftes Signal |
+| `C_1.5pct_reentry`, `C_2.0pct_reentry`, `C_ATR_reentry` | wie A | wie B |
+
+**Positionsgröße:** Bei gleichem Risikobudget verkleinert ein weiterer Stop die Stückzahl. Die 30-%-Kapitalgrenze bleibt bestehen.
+
+**Auswertung:** `comparison.csv` mit drei Zeiträumen:
+- **„Festlegen (bis Split)“:** Zeitraum, in dem die Variante ausgewählt wird.
+- **„Pruefen (ab Split)“:** unberührter Kontrollzeitraum.
+- **„Gesamt“**
+
+Kennzahlen je Variante und Zeitraum: Trades, Trefferquote, Summe, Stressergebnis, Ø R, Profitfaktor, maximaler Drawdown, Stops, Wiedereinstiege.
+
+**Konsistenzprüfung:** Die Basisvariante muss den Replay reproduzieren (`baseline_consistency.csv`, `sweep.json` → `baseline_matches_base_replay`). Ausstiegsminute und Ergebnis müssen übereinstimmen. Die Sekunde darf durch die simulierte Latenz abweichen.
+
+**Tests:** `tests/test_variants_v15.py`, 6 Fälle:
+- Basis reproduziert den Replay.
+- Ein 2-%-Stop übersteht einen Rücksetzer, den 1 % ausstoppt.
+- Wiedereinstieg nach Stop und Pause.
+- Ohne Freigabe kein Wiedereinstieg.
+- ATR-Stop mit Untergrenze.
+- Ausgabedateien.
+
+**Offen:** Noch kein Lauf mit echten Alpaca-Daten.
 
 ## 5. Freigabe von BOT 1 (später, gesondert)
 
