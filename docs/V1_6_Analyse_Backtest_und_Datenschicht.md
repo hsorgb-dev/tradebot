@@ -1,6 +1,6 @@
 # V1.6 – Ist-Analyse und Plan: Backtest-Modus, Historical Data Layer, Research-Export
 
-Stand 29.09.2026. **Reine Analyse, kein Code geändert.**
+Stand 29.09.2026. Analyse vor der Umsetzung. **Umgesetzt:** siehe `docs/V1_6_Aenderungs_und_Testprotokoll.md` (Entscheidungen des Nutzers: V1.6 auf V1.5, SIP-Test über das Cockpit, Modi mit Zusatzschalter „SIP-Vergleichsbot parallel“, Kapitalfortschreibung, Datenqualitätsregeln a–e).
 Basis ist `US_Aktien_Bot_V1_5_Dual_IEX_SIP_Cockpit.ipynb` (Entscheidung des Nutzers).
 
 ## 0. Ausgangslage
