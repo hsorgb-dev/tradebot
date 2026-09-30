@@ -198,7 +198,7 @@ def test_equity_curve_and_daily_metrics(run):
 def test_non_trading_period_is_reported_clearly(tmp_path):
     result = backtest.run_backtest(make_store(tmp_path, CalendarMarket()), tmp_path / 'drive', C, S,
                                    backtest.BacktestSettings(HOLIDAY, HOLIDAY))
-    assert result['status'] == 'NO_TRADING_DAYS'
+    assert result['status'] == 'COMPLETED' and result['status_reason'] == 'NO_TRADING_DAYS'
     assert result['summary']['performance']['trading_days'] == 0 and result['bundle'].exists()
 
 
@@ -248,7 +248,7 @@ def test_sip_quotes_forbidden_stops_without_iex(tmp_path):
     market.fail['quotes'] = ApiError(403, 'forbidden')
     result = backtest.run_backtest(make_store(tmp_path, market), tmp_path / 'drive', C, S,
                                    backtest.BacktestSettings('2026-09-14', '2026-09-15'))
-    assert result['status'] == 'SIP_UNAVAILABLE'
+    assert result['status'] == 'INCOMPLETE_DATA' and result['status_reason'] == 'SIP_UNAVAILABLE'
     assert any('No automatic IEX fallback performed' in w for w in result['warnings'])
     assert {getattr(r.feed, 'value', r.feed) for _, r in market.requests} == {'sip'}
     assert not pd.read_parquet(result['folder'] / 'daily.parquet').simulated.any()

@@ -50,7 +50,7 @@ def app(tmp_path):
     market = CalendarMarket()
     project = tmp_path / 'drive'
     make_store(project / 'data', market)          # universe snapshot, as after a first real run
-    return panel.App(project, market, market, ('k', 's'), C, S, display_now=False), market
+    return panel.App(project, market, market, ('k', 's'), C, S, display_now=False, background=False), market
 
 
 def test_mode_selector_is_exclusive_and_shows_the_right_fields(app):
