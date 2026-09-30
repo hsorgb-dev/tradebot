@@ -13,7 +13,7 @@ NOTEBOOKS = [ROOT / 'US_Aktien_Bot_V1_2_Ganztag_Shadow_Simulation.ipynb',
              # V1.4.3 supersedes V1.4/V1.4.2 (same module names, so only one is tested)
              ROOT / 'US_Aktien_Bot_V1_4_3_SIP_Cockpit.ipynb',
              ROOT / 'US_Aktien_Bot_V1_5_Dual_IEX_SIP_Cockpit.ipynb',
-             ROOT / 'US_Aktien_Bot_V1_6_Backtest_Research_Cockpit.ipynb']
+             ROOT / 'US_Aktien_Bot_V1_6_1_Backtest_Research_Cockpit.ipynb']
 MARKER = '%%writefile /content/'
 
 

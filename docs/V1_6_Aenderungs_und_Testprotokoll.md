@@ -1,7 +1,7 @@
 # V1.6 – Backtest, Historical Data Layer und Research-Export: Änderungs- und Testprotokoll
 
 **Basis:** `US_Aktien_Bot_V1_5_Dual_IEX_SIP_Cockpit.ipynb`. Die Datei bleibt unverändert.
-**Neu:** `US_Aktien_Bot_V1_6_Backtest_Research_Cockpit.ipynb`, erzeugt mit `tools/build_v16.py`.
+**Neu:** `US_Aktien_Bot_V1_6_1_Backtest_Research_Cockpit.ipynb`, erzeugt mit `tools/build_v16.py`.
 **Vorab-Analyse:** `docs/V1_6_Analyse_Backtest_und_Datenschicht.md`.
 
 Umgesetzt sind in einem Paket drei Aufträge:

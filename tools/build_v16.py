@@ -1,4 +1,4 @@
-"""Assemble US_Aktien_Bot_V1_6_Backtest_Research_Cockpit.ipynb from V1.6 module and cell files.
+"""Assemble US_Aktien_Bot_V1_6_1_Backtest_Research_Cockpit.ipynb from V1.6 module and cell files.
 
     python tools/build_v16.py <module_dir> <cells_dir>
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = ROOT / 'US_Aktien_Bot_V1_5_Dual_IEX_SIP_Cockpit.ipynb'
-TARGET = ROOT / 'US_Aktien_Bot_V1_6_Backtest_Research_Cockpit.ipynb'
+TARGET = ROOT / 'US_Aktien_Bot_V1_6_1_Backtest_Research_Cockpit.ipynb'
 MODULES = ['us_orb_test_v02.py', 'us_orb_scanner_v03.py', 'bot_mode_v16.py', 'orb_portfolio_v15.py',
            'orb_sim_v16.py', 'orb_cockpit_v16.py', 'orb_replay_v16.py', 'hist_data_v16.py',
            'data_access_v16.py', 'research_export_v16.py', 'backtest_v16.py', 'bot_accounts_v15.py',
