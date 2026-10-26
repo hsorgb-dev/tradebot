@@ -1,69 +1,69 @@
-# MNQ 1 AM Range Breakout (TradingView, Pine Script v6)
+# MNQ 1-Uhr-Range-Ausbruch (TradingView, Pine Script v6)
 
-`MNQ_1AM_Range_Breakout.pine` is a TradingView strategy for **MNQ1! on the 5-minute chart**.
-All clock times are New York time. Daylight saving changes are handled automatically.
+`MNQ_1Uhr_Range_Ausbruch.pine` ist eine TradingView-Strategie für **MNQ1! im 5-Minuten-Chart**.
+Alle Uhrzeiten sind New Yorker Zeit. Die Sommerzeitumstellung wird automatisch berücksichtigt.
 
-## Rules
+## Regeln
 
-| Step | Rule |
+| Schritt | Regel |
 |---|---|
-| Range | Highest high and lowest low of the 01:00, 01:05 and 01:10 bars (01:00–01:15 NY) |
-| Long | First 5-min candle that **closes above** the range high → buy at the next bar's open |
-| Short | First 5-min candle that **closes below** the range low → sell at the next bar's open |
-| Stop | Opposite side of the range |
-| Target | 0.5 R from the actual fill price (R = entry − stop) |
+| Range | Höchstes Hoch und tiefstes Tief der Kerzen 01:00, 01:05 und 01:10 (01:00–01:15 NY) |
+| Long | Erste 5-Min-Kerze, die **über** dem Range-Hoch **schließt** → Kauf zur Eröffnung der nächsten Kerze |
+| Short | Erste 5-Min-Kerze, die **unter** dem Range-Tief **schließt** → Verkauf zur Eröffnung der nächsten Kerze |
+| Stop | Gegenüberliegende Seite der Range |
+| Ziel | 0,5 R ab dem tatsächlichen Ausführungskurs (R = Abstand Einstieg – Stop) |
 
-### Choices the spec left open (all are inputs)
+### Vorgaben, die in der Aufgabe offen waren (alle einstellbar)
 
-- **Breakout candle:** "Close outside" by default. "Full body outside" requires open and close both beyond the range.
-- **One trade per day.** With `Max trades per day` > 1, another trade needs a fresh breakout: price closes back inside the range, then outside again.
-- **Last entry 12:00 NY, flatten at 15:55 NY.**
-- **Costs:** $0.62 commission per contract per side, 1 tick slippage on market and stop orders. A target counts as filled only when price trades 1 tick through it.
-- **Margin checks off** (`margin_long/short = 0`), so a small account isn't liquidated by TradingView's stock-style margin model.
+- **Ausbruchskerze:** standardmäßig „Schluss außerhalb“. Bei „Ganzer Körper außerhalb“ müssen Eröffnung und Schluss beide jenseits der Range liegen.
+- **Ein Trade pro Tag.** Ist `Max. Trades pro Tag` größer als 1, braucht jeder weitere Trade einen neuen Ausbruch: Der Kurs schließt erst wieder innerhalb der Range, dann erneut außerhalb.
+- **Letzter Einstieg 12:00 NY, Glattstellen um 15:55 NY.**
+- **Kosten:** 0,62 $ Kommission je Kontrakt und Seite, 1 Tick Slippage bei Market- und Stop-Orders. Ein Ziel gilt erst als erreicht, wenn der Kurs 1 Tick darüber hinaus handelt.
+- **Margin-Prüfung aus** (`margin_long/short = 0`), damit TradingView ein kleines Konto nicht nach dem Aktien-Margin-Modell liquidiert.
 
-A 0.5 R target with a 1 R stop needs a win rate above **66.7 % before costs** to break even. On narrow ranges, costs take a large share of each win.
+Ein Ziel von 0,5 R bei 1 R Stop braucht **vor Kosten eine Trefferquote über 66,7 %**, um die Gewinnschwelle zu erreichen. Bei engen Ranges fressen die Kosten einen großen Teil jedes Gewinns.
 
-## Setup
+## Einrichtung
 
-1. Pine Editor → paste the file → **Add to chart** on `MNQ1!`, 5-minute timeframe.
-2. Strategy Tester → Overview / List of trades.
-3. Recommended:
-   - **Bar magnifier** (Properties, Premium plans): stop and target are often inside the same 5-min bar.
-   - **Back-adjustment** for contract rolls in the chart's symbol settings: this keeps the daily EMA in Filter 1 clean.
-4. History: TradingView loads only a limited number of 5-min bars, depending on your plan. Use **Deep Backtesting** if you have it, otherwise you only test a few months.
+1. Pine-Editor öffnen → Datei einfügen → **Zum Chart hinzufügen**, auf `MNQ1!` im 5-Minuten-Zeitrahmen.
+2. Strategietester → Übersicht / Liste der Trades.
+3. Empfohlen:
+   - **Bar Magnifier** (Eigenschaften, ab Premium): Stop und Ziel liegen oft in derselben 5-Min-Kerze.
+   - **Rückwärtsanpassung** (engl. *Back-adjustment*) bei Kontraktwechseln in den Symboleinstellungen des Charts: Sie hält den Tages-EMA von Filter 1 sauber.
+4. Historie: TradingView lädt je nach Abo nur eine begrenzte Zahl von 5-Min-Kerzen. Mit **Deep Backtesting** lässt sich mehr Historie testen, sonst sind es nur wenige Monate.
 
-## The five regime filters
+## Die fünf Regime-Filter
 
-All filters are **off** by default. Each one is a separate input group with an `Enable` box and Min/Max limits.
+Alle Filter sind standardmäßig **aus**. Jeder hat eine eigene Eingabegruppe mit dem Kästchen `Aktivieren` und Min/Max-Grenzen.
 
-| # | Regime | Value | Default pass rule | Idea being tested |
+| # | Regime | Messwert | Standardregel | Getestete Idee |
 |---|---|---|---|---|
-| 1 | **Trend direction** | Previous daily close vs daily EMA(20) | Longs only above, shorts only below | Breakouts in the direction of the higher-timeframe trend follow through more often |
-| 2 | **Volatility (VIX)** | Previous daily close of `CBOE:VIX` | 0 – 20 | Calm markets give cleaner breakouts. Switch to 20 – 100 to test the opposite. `CBOE:VXN` is the Nasdaq-100 version |
-| 3 | **Range width** | Today's 1 AM range ÷ average of the last 10 days' 1 AM ranges | 0.5 – 1.5 | Skips very tight ranges (costs and noise) and very wide ranges (stop too far away) |
-| 4 | **Trend strength (ADX)** | ADX(14) of the last closed 60-min bar, at the moment of the breakout | 20 – 100 | Trending markets follow through; choppy markets (try 0 – 20) whip back to the stop |
-| 5 | **Overnight participation** | Volume 18:00 → 01:15 ÷ average of the last 10 days | 1.0 – 100 | Above-normal overnight activity means real interest behind the move |
+| 1 | **Trendrichtung** | Vortagesschluss gegenüber Tages-EMA(20) | Darüber nur Longs, darunter nur Shorts | Ausbrüche in Richtung des übergeordneten Trends laufen öfter weiter |
+| 2 | **Volatilität (VIX)** | Vortagesschluss von `CBOE:VIX` | 0 – 20 | Ruhige Märkte liefern sauberere Ausbrüche. Mit 20 – 100 das Gegenteil testen. `CBOE:VXN` ist die Nasdaq-100-Variante |
+| 3 | **Range-Breite** | Heutige 1-Uhr-Range ÷ Durchschnitt der 1-Uhr-Ranges der letzten 10 Tage | 0,5 – 1,5 | Lässt sehr enge Ranges (Kosten und Rauschen) und sehr weite Ranges (Stop zu weit weg) aus |
+| 4 | **Trendstärke (ADX)** | ADX(14) der letzten abgeschlossenen 60-Min-Kerze, im Moment des Ausbruchs | 20 – 100 | Trendmärkte laufen weiter; Seitwärtsmärkte (0 – 20 testen) laufen zum Stop zurück |
+| 5 | **Beteiligung über Nacht** | Volumen 18:00 → 01:15 ÷ Durchschnitt der letzten 10 Tage | 1,0 – 100 | Überdurchschnittliche Aktivität in der Nacht bedeutet echtes Interesse hinter der Bewegung |
 
-No filter repaints. Higher-timeframe values only use closed bars. VIX, range width and overnight volume are fixed for the day when the range completes at 01:15.
+Kein Filter repaintet. Werte aus höheren Zeitrahmen stammen nur von abgeschlossenen Kerzen. VIX, Range-Breite und Nachtvolumen werden für den Tag festgehalten, sobald die Range um 01:15 fertig ist.
 
-### Regime filter table (bottom right of the chart)
+### Regime-Filter-Tabelle (unten rechts im Chart)
 
-For every filter, the table splits the **trades of the current run** into those the filter would have allowed (*Pass*) and those it would have blocked (*Fail*). Each side shows trade count, win rate and average R after costs. The *Today* column shows today's state and value.
+Für jeden Filter teilt die Tabelle die **Trades des aktuellen Laufs** auf: in die, die der Filter durchgelassen hätte (*Durchgelassen*), und die, die er blockiert hätte (*Blockiert*). Jede Seite zeigt Anzahl der Trades, Trefferquote und durchschnittliches R nach Kosten. Die Spalte *Heute* zeigt den heutigen Zustand und Wert.
 
-The split is only a fair comparison in a run with **every filter off**. Gray ✕ markers show breakouts that an enabled filter blocked.
+Der Vergleich ist nur in einem Lauf mit **allen Filtern aus** fair. Graue ✕ markieren Ausbrüche, die ein eingeschalteter Filter blockiert hat.
 
-## How to test which filter works best
+## Den besten Filter finden
 
-1. **Baseline:** run with all filters off. Note net profit, profit factor, win rate, max drawdown and the number of trades.
-2. **Shortlist:** in the table, look for filters where *Pass* avg R is clearly above *Fail* avg R, with at least about 30 trades on each side.
-3. **Confirm:** enable one filter at a time and compare its Strategy Tester results with the baseline. A blocked first breakout can be followed by a later one, so these numbers can differ slightly from the table.
-4. **Robustness:** move each threshold a little (for example ADX 15 / 20 / 25). An edge that only exists at one exact value is noise.
-5. **Out of sample:** use `Backtest window` to pick the filter and thresholds on the first ~70 % of the history, then check them on the last ~30 % without changing anything.
-6. Combine the best two filters only after each one holds up on its own.
+1. **Basislauf:** alle Filter aus. Nettogewinn, Profitfaktor, Trefferquote, maximalen Drawdown und Anzahl der Trades notieren.
+2. **Vorauswahl:** In der Tabelle nach Filtern suchen, bei denen Ø R unter *Durchgelassen* deutlich über Ø R unter *Blockiert* liegt, mit jeweils mindestens etwa 30 Trades auf beiden Seiten.
+3. **Bestätigen:** Jeweils einen Filter einschalten und seine Strategietester-Ergebnisse mit dem Basislauf vergleichen. Auf einen blockierten ersten Ausbruch kann später ein zweiter folgen, deshalb können diese Zahlen leicht von der Tabelle abweichen.
+4. **Robustheit:** Jede Schwelle leicht verschieben (zum Beispiel ADX 15 / 20 / 25). Ein Vorteil, der nur bei einem exakten Wert besteht, ist Zufall.
+5. **Out-of-Sample:** Mit `Backtest-Zeitraum` Filter und Schwellen auf den ersten ~70 % der Historie auswählen und dann ohne Änderung auf den letzten ~30 % prüfen.
+6. Die besten zwei Filter erst kombinieren, wenn jeder einzeln besteht.
 
-## Automation (webhooks)
+## Automatisierung (Webhooks)
 
-Every order carries a JSON `alert_message`:
+Jede Order trägt eine JSON-`alert_message`. Feldnamen und Werte bleiben englisch, weil Webhook-Brücken sie so erwarten:
 
 ```json
 {"symbol":"MNQ1!","action":"buy","qty":1,"price":25010.25,"stop":24990.00,"target":25020.25}
@@ -71,15 +71,17 @@ Every order carries a JSON `alert_message`:
 {"symbol":"MNQ1!","action":"exit","reason":"eod"}
 ```
 
-1. Create an alert on the strategy → *Order fills only* → message `{{strategy.order.alert_message}}`.
-2. Put your bridge's webhook URL in the alert. Adapt the field names to what your bridge expects (TradersPost, PickMyTrade, etc.).
-3. `Symbol in alert messages` overrides `MNQ1!`, for example with the front-month contract your broker needs.
+`tp_or_sl` heißt Ziel oder Stop erreicht, `eod` heißt Glattstellen zum Tagesende.
 
-There are two ways to run it:
+1. Alarm auf der Strategie anlegen → *Nur Order-Ausführungen* (engl. *Order fills only*) → Nachricht `{{strategy.order.alert_message}}`.
+2. Die Webhook-URL der Brücke im Alarm eintragen. Feldnamen an das anpassen, was die Brücke erwartet (TradersPost, PickMyTrade usw.).
+3. `Symbol in Alarm-Nachrichten` ersetzt `MNQ1!`, zum Beispiel durch den Frontmonat-Kontrakt, den der Broker braucht.
 
-- **TradingView manages the exits:** each exit fill sends `exit`.
-- **The broker holds a bracket:** send stop and target with the entry, and forward only the `eod` exit.
+Es gibt zwei Betriebsarten:
 
-In the second mode the target in the entry message is based on the signal candle's close, not the fill, so it can differ from the backtest by a tick or two.
+- **TradingView steuert die Ausstiege:** Jede Ausstiegs-Ausführung sendet `exit`.
+- **Der Broker hält eine Bracket-Order:** Stop und Ziel mit dem Einstieg senden und nur den `eod`-Ausstieg weiterleiten.
 
-Run it on a paper or sim account first.
+In der zweiten Betriebsart basiert das Ziel in der Einstiegsnachricht auf dem Schlusskurs der Signalkerze, nicht auf dem Ausführungskurs. Es kann deshalb ein bis zwei Ticks vom Backtest abweichen.
+
+Zuerst auf einem Papier- oder Simulationskonto laufen lassen.

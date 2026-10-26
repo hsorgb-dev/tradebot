@@ -1,0 +1,385 @@
+//@version=6
+// MNQ 1-Uhr-Range-Ausbruch (New Yorker Zeit) mit 5 zuschaltbaren Regime-Filtern.
+// Gebaut für MNQ1! im 5-Minuten-Chart. Alle Uhrzeiten sind New Yorker Zeit (America/New_York),
+// die Sommerzeitumstellung wird dadurch automatisch berücksichtigt.
+//
+// Regeln
+//   Range   Hoch/Tief der Kerzen von 01:00 bis 01:15 NY (im 5-Min-Chart die Kerzen 01:00, 01:05 und 01:10)
+//   Long    eine Kerze schließt über dem Range-Hoch  -> Kauf zur Eröffnung der nächsten Kerze
+//   Short   eine Kerze schließt unter dem Range-Tief -> Verkauf zur Eröffnung der nächsten Kerze
+//   Stop    die gegenüberliegende Seite der Range
+//   Ziel    0,5 R ab dem tatsächlichen Ausführungskurs (R = Abstand vom Einstieg zum Stop)
+//
+// Die Regime-Filter 1-5 sind standardmäßig aus. Einzeln (oder kombiniert) einschalten und die Ergebnisse im
+// Strategietester mit dem ungefilterten Basislauf vergleichen. Die Tabelle im Chart teilt die Trades des
+// aktuellen Laufs danach auf, ob der jeweilige Filter sie durchgelassen hätte.
+strategy("MNQ 1-Uhr-Range-Ausbruch", shorttitle = "1-Uhr-ORB", overlay = true,
+     pyramiding = 0,
+     default_qty_type = strategy.fixed,
+     default_qty_value = 1,
+     initial_capital = 10000,
+     currency = currency.USD,
+     commission_type = strategy.commission.cash_per_contract,
+     commission_value = 0.62,
+     slippage = 1,
+     backtest_fill_limits_assumption = 1,
+     margin_long = 0,
+     margin_short = 0,
+     max_boxes_count = 500,
+     max_lines_count = 500,
+     max_labels_count = 500)
+
+TZ = "America/New_York"
+
+// ───────────────────────────── Eingaben ─────────────────────────────
+G_SETUP = "Grundeinstellungen"
+string rangeSess = input.session("0100-0115", "Range-Zeitfenster (NY-Zeit)", group = G_SETUP)
+string breakMode = input.string("Schluss außerhalb", "Ausbruchskerze", options = ["Schluss außerhalb", "Ganzer Körper außerhalb"], group = G_SETUP,
+     tooltip = "Schluss außerhalb: Die Kerze schließt jenseits der Range.\nGanzer Körper außerhalb: Eröffnung und Schluss liegen beide jenseits der Range.")
+float targetR    = input.float(0.5, "Ziel (Vielfaches von R)", minval = 0.05, step = 0.05, group = G_SETUP)
+int stopBuf      = input.int(0, "Stop-Puffer jenseits der Range (Ticks)", minval = 0, group = G_SETUP)
+int contracts    = input.int(1, "Kontrakte", minval = 1, group = G_SETUP)
+int maxTrades    = input.int(1, "Max. Trades pro Tag", minval = 1, group = G_SETUP,
+     tooltip = "Ein weiterer Trade braucht einen neuen Ausbruch: Eine Kerze schließt wieder innerhalb der Range und danach erneut außerhalb.")
+int entryEndH    = input.int(12, "Letzter Einstieg (NY)", minval = 0, maxval = 23, inline = "entry", group = G_SETUP)
+int entryEndM    = input.int(0, ":", minval = 0, maxval = 59, inline = "entry", group = G_SETUP)
+int flatH        = input.int(15, "Glattstellen um (NY)", minval = 0, maxval = 23, inline = "flat", group = G_SETUP)
+int flatM        = input.int(55, ":", minval = 0, maxval = 59, inline = "flat", group = G_SETUP)
+
+G_TEST = "Backtest-Zeitraum"
+int fromTs = input.time(timestamp("01 Jan 2019 00:00 +0000"), "Von", group = G_TEST)
+int toTs   = input.time(timestamp("31 Dec 2099 00:00 +0000"), "Bis", group = G_TEST)
+
+G_F1 = "Filter 1 · Trendrichtung (Tages-EMA)"
+bool useF1 = input.bool(false, "Aktivieren", group = G_F1,
+     tooltip = "Longs nur, wenn der Schlusskurs des Vortags über dem Tages-EMA liegt, Shorts nur, wenn er darunter liegt.")
+int f1Len  = input.int(20, "EMA-Länge (Tage)", minval = 1, group = G_F1)
+
+G_F2 = "Filter 2 · Volatilitätsregime (VIX)"
+bool useF2    = input.bool(false, "Aktivieren", group = G_F2,
+     tooltip = "Trades nur, wenn der Vortagesschluss des Volatilitätsindex zwischen Min und Max liegt. CBOE:VXN ist die Nasdaq-100-Variante. Liefert CBOE:VIX im eigenen Abo keine Daten, TVC:VIX verwenden.")
+string f2Sym  = input.symbol("CBOE:VIX", "Volatilitätsindex", group = G_F2)
+float f2Min   = input.float(0.0, "Min", inline = "f2", group = G_F2)
+float f2Max   = input.float(20.0, "Max", inline = "f2", group = G_F2)
+
+G_F3 = "Filter 3 · Range-Breite im Vergleich zu den Vortagen"
+bool useF3    = input.bool(false, "Aktivieren", group = G_F3,
+     tooltip = "Höhe der heutigen 1-Uhr-Range geteilt durch die durchschnittliche Höhe der 1-Uhr-Ranges der letzten N Tage. 1,0 = normaler Tag.")
+int f3Len     = input.int(10, "Rückblick (Tage)", minval = 1, group = G_F3)
+float f3Min   = input.float(0.5, "Min", step = 0.1, inline = "f3", group = G_F3)
+float f3Max   = input.float(1.5, "Max", step = 0.1, inline = "f3", group = G_F3)
+
+G_F4 = "Filter 4 · Trendstärke (ADX)"
+bool useF4    = input.bool(false, "Aktivieren", group = G_F4,
+     tooltip = "ADX der letzten abgeschlossenen Kerze im gewählten Zeitrahmen, geprüft im Moment des Ausbruchs. Hoch = Trend, niedrig = Seitwärtsmarkt.")
+string f4Tf   = input.timeframe("60", "ADX-Zeitrahmen", group = G_F4)
+int f4Len     = input.int(14, "ADX-Länge", minval = 1, group = G_F4)
+float f4Min   = input.float(20.0, "Min", inline = "f4", group = G_F4)
+float f4Max   = input.float(100.0, "Max", inline = "f4", group = G_F4)
+
+G_F5 = "Filter 5 · Beteiligung über Nacht (relatives Volumen)"
+bool useF5    = input.bool(false, "Aktivieren", group = G_F5,
+     tooltip = "Volumen von der Globex-Eröffnung (18:00 NY) bis zum Ende der Range, geteilt durch den Durchschnitt der letzten N Tage. 1,0 = normale Beteiligung.")
+int f5Len     = input.int(10, "Rückblick (Tage)", minval = 1, group = G_F5)
+float f5Min   = input.float(1.0, "Min", step = 0.1, inline = "f5", group = G_F5)
+float f5Max   = input.float(100.0, "Max", step = 0.1, inline = "f5", group = G_F5)
+
+G_AUTO = "Automatisierung"
+string alertSymIn = input.string("", "Symbol in Alarm-Nachrichten (leer = Chart-Ticker)", group = G_AUTO)
+
+G_VIEW = "Anzeige"
+bool showTable = input.bool(true, "Regime-Filter-Tabelle anzeigen", group = G_VIEW)
+
+if barstate.isfirst and (not timeframe.isintraday or timeframe.in_seconds() > 900)
+    runtime.error("Bitte einen Intraday-Chart mit höchstens 15 Minuten verwenden. Die Strategie ist für den 5-Minuten-Chart gebaut.")
+
+// ───────────────────────────── Hilfsfunktionen ─────────────────────────────
+type TradeTag
+    float stopPrice
+    int f1
+    int f2
+    int f3
+    int f4
+    int f5
+
+string alertSym = alertSymIn == "" ? syminfo.ticker : alertSymIn
+
+// Feldnamen und Werte der JSON-Nachrichten bleiben englisch, weil Webhook-Brücken sie so erwarten.
+f_entryMsg(string action, float price, float stopPx, float targetPx) =>
+    '{"symbol":"' + alertSym + '","action":"' + action + '","qty":' + str.tostring(contracts) + ',"price":' + str.tostring(price, format.mintick) + ',"stop":' + str.tostring(stopPx, format.mintick) + ',"target":' + str.tostring(targetPx, format.mintick) + '}'
+
+f_exitMsg(string reason) =>
+    '{"symbol":"' + alertSym + '","action":"exit","reason":"' + reason + '"}'
+
+// 1 = durchgelassen, 0 = blockiert, -1 = zu wenig Daten
+f_state(bool valid, bool isPass) =>
+    valid ? (isPass ? 1 : 0) : -1
+
+f_between(float v, float lo, float hi) =>
+    not na(v) and v >= lo and v <= hi
+
+// ADX der Vorkerze, damit der Wert aus dem höheren Zeitrahmen immer von einer abgeschlossenen Kerze stammt.
+f_prevAdx(simple int len) =>
+    [diPlus, diMinus, adxNow] = ta.dmi(len, len)
+    adxNow[1]
+
+// ───────────────────────────── Daten höherer Zeitrahmen (ohne Repainting) ─────────────────────────────
+// F1: Schlusskurs und EMA der letzten abgeschlossenen Tagessitzung.
+[f1PrevClose, f1PrevEma] = request.security(syminfo.tickerid, "D", [close[1], ta.ema(close, f1Len)[1]], lookahead = barmerge.lookahead_on)
+// F2: Tagesschluss des Volatilitätsindex. Ohne Lookahead erscheint eine historische Tageskerze erst, wenn sie
+// abgeschlossen ist. Der Wert wird festgehalten, sobald die Range fertig ist (vor Beginn der Kassasitzung).
+float f2Live = request.security(f2Sym, "D", close, lookahead = barmerge.lookahead_off, ignore_invalid_symbol = true)
+// F4: ADX der letzten abgeschlossenen Kerze im gewählten Zeitrahmen.
+float f4Adx = request.security(syminfo.tickerid, f4Tf, f_prevAdx(f4Len), lookahead = barmerge.lookahead_on)
+
+// ───────────────────────────── Volumen über Nacht für F5 ─────────────────────────────
+var float onVol      = 0.0
+var bool  onCounting = false
+if session.isfirstbar
+    onVol      := 0.0
+    onCounting := true
+
+// ───────────────────────────── 1-Uhr-Range ─────────────────────────────
+bool inRange    = not na(time(timeframe.period, rangeSess, TZ))
+bool rangeStart = inRange and not inRange[1]
+bool rangeEnd   = not inRange and inRange[1]
+
+var float rangeHigh   = na
+var float rangeLow    = na
+var bool  rangeReady  = false
+var int   tradesToday = 0
+var int   entryEndTs  = na
+var int   flattenTs   = na
+var box   rangeBox    = na
+
+if rangeStart
+    rangeHigh   := high
+    rangeLow    := low
+    rangeReady  := false
+    tradesToday := 0
+    int y = year(time, TZ)
+    int m = month(time, TZ)
+    int d = dayofmonth(time, TZ)
+    entryEndTs := timestamp(TZ, y, m, d, entryEndH, entryEndM)
+    flattenTs  := timestamp(TZ, y, m, d, flatH, flatM)
+    if entryEndTs <= time
+        entryEndTs += 86400000
+    if flattenTs <= time
+        flattenTs += 86400000
+    rangeBox := box.new(time, high, entryEndTs, low, xloc = xloc.bar_time, border_color = color.new(color.orange, 20), bgcolor = color.new(color.orange, 88))
+else if inRange
+    rangeHigh := math.max(rangeHigh, high)
+    rangeLow  := math.min(rangeLow, low)
+    box.set_top(rangeBox, rangeHigh)
+    box.set_bottom(rangeBox, rangeLow)
+
+// Tageswerte der Filter, einmal erfasst, wenn die Range fertig ist.
+var float f2Day = na
+var float f3Day = na
+var float f5Day = na
+var array<float> pastHeights = array.new<float>()
+var array<float> pastOnVol   = array.new<float>()
+
+if rangeEnd and not na(rangeHigh)
+    rangeReady := true
+    f2Day := f2Live
+    float height = rangeHigh - rangeLow
+    f3Day := pastHeights.size() >= f3Len and pastHeights.avg() > 0 ? height / pastHeights.avg() : na
+    pastHeights.push(height)
+    if pastHeights.size() > f3Len
+        pastHeights.shift()
+    if onCounting
+        f5Day := pastOnVol.size() >= f5Len and pastOnVol.avg() > 0 ? onVol / pastOnVol.avg() : na
+        pastOnVol.push(onVol)
+        if pastOnVol.size() > f5Len
+            pastOnVol.shift()
+    else
+        f5Day := na
+    onCounting := false
+
+if onCounting
+    onVol += nz(volume)
+
+// ───────────────────────────── Ausbrüche ─────────────────────────────
+float bodyTop     = math.max(open, close)
+float bodyBottom  = math.min(open, close)
+bool  fullBody    = breakMode == "Ganzer Körper außerhalb"
+bool  closedAbove = rangeReady and (fullBody ? bodyBottom > rangeHigh : close > rangeHigh)
+bool  closedBelow = rangeReady and (fullBody ? bodyTop < rangeLow : close < rangeLow)
+// Nur der erste Schluss außerhalb zählt; draußen bleiben ist kein neues Signal.
+bool  longBreak   = closedAbove and not closedAbove[1]
+bool  shortBreak  = closedBelow and not closedBelow[1]
+
+// ───────────────────────────── Regime-Filter ─────────────────────────────
+bool f1Valid = not na(f1PrevClose) and not na(f1PrevEma)
+int  s1Long  = f_state(f1Valid, f1PrevClose > f1PrevEma)
+int  s1Short = f_state(f1Valid, f1PrevClose < f1PrevEma)
+int  s2      = f_state(not na(f2Day), f_between(f2Day, f2Min, f2Max))
+int  s3      = f_state(not na(f3Day), f_between(f3Day, f3Min, f3Max))
+int  s4      = f_state(not na(f4Adx), f_between(f4Adx, f4Min, f4Max))
+int  s5      = f_state(not na(f5Day), f_between(f5Day, f5Min, f5Max))
+
+bool bothOK  = (not useF2 or s2 == 1) and (not useF3 or s3 == 1) and (not useF4 or s4 == 1) and (not useF5 or s5 == 1)
+bool longOK  = bothOK and (not useF1 or s1Long == 1)
+bool shortOK = bothOK and (not useF1 or s1Short == 1)
+
+// ───────────────────────────── Filterstatistik aus abgeschlossenen Trades ─────────────────────────────
+var map<int, TradeTag> tags = map.new<int, TradeTag>()
+var array<int>   passN = array.new<int>(5, 0)
+var array<int>   passW = array.new<int>(5, 0)
+var array<float> passR = array.new<float>(5, 0.0)
+var array<int>   failN = array.new<int>(5, 0)
+var array<int>   failW = array.new<int>(5, 0)
+var array<float> failR = array.new<float>(5, 0.0)
+var int   allN = 0
+var int   allW = 0
+var float allR = 0.0
+var int   closedSeen = 0
+
+while closedSeen < strategy.closedtrades
+    int ebi = strategy.closedtrades.entry_bar_index(closedSeen)
+    TradeTag tag = tags.get(ebi)
+    if not na(tag)
+        float ep       = strategy.closedtrades.entry_price(closedSeen)
+        float sz       = math.abs(strategy.closedtrades.size(closedSeen))
+        float riskCash = math.abs(ep - tag.stopPrice) * syminfo.pointvalue * sz
+        if riskCash > 0
+            // R-Vielfaches nach Kommission und Slippage
+            float r   = strategy.closedtrades.profit(closedSeen) / riskCash
+            int   win = r > 0 ? 1 : 0
+            allN += 1
+            allW += win
+            allR += r
+            array<int> states = array.from(tag.f1, tag.f2, tag.f3, tag.f4, tag.f5)
+            for [k, st] in states
+                if st == 1
+                    passN.set(k, passN.get(k) + 1)
+                    passW.set(k, passW.get(k) + win)
+                    passR.set(k, passR.get(k) + r)
+                else if st == 0
+                    failN.set(k, failN.get(k) + 1)
+                    failW.set(k, failW.get(k) + win)
+                    failR.set(k, failR.get(k) + r)
+        tags.remove(ebi)
+    closedSeen += 1
+
+// ───────────────────────────── Orders ─────────────────────────────
+var float tradeStop   = na
+var float tradeTarget = na
+
+// Zur eingestellten Zeit glattstellen. Sonst das Ziel neu am echten Ausführungskurs ausrichten, sobald die Position offen ist.
+bool flattenNow = strategy.position_size != 0 and time_close >= flattenTs
+if flattenNow
+    strategy.close_all(comment = "Tagesende", alert_message = f_exitMsg("eod"))
+else if strategy.position_size > 0 and strategy.position_avg_price > tradeStop
+    float fillPx = strategy.position_avg_price
+    tradeTarget := math.round_to_mintick(fillPx + targetR * (fillPx - tradeStop))
+    strategy.exit("Long-Ausstieg", from_entry = "Long", stop = tradeStop, limit = tradeTarget, comment_profit = "Ziel", comment_loss = "Stop", alert_message = f_exitMsg("tp_or_sl"))
+else if strategy.position_size < 0 and strategy.position_avg_price < tradeStop
+    float fillPx = strategy.position_avg_price
+    tradeTarget := math.round_to_mintick(fillPx - targetR * (tradeStop - fillPx))
+    strategy.exit("Short-Ausstieg", from_entry = "Short", stop = tradeStop, limit = tradeTarget, comment_profit = "Ziel", comment_loss = "Stop", alert_message = f_exitMsg("tp_or_sl"))
+
+bool inDateRange   = time >= fromTs and time <= toTs
+bool inEntryWindow = rangeReady and time_close <= entryEndTs and time_close < flattenTs
+bool canEnter      = inDateRange and inEntryWindow and strategy.position_size == 0 and tradesToday < maxTrades
+bool goLong        = canEnter and longBreak and longOK
+bool goShort       = canEnter and shortBreak and shortOK
+
+// Der Ausstieg wird zusammen mit dem Einstieg platziert, mit dem Signalschluss als vorläufigem Einstiegskurs.
+// Der Einstieg wird zur Eröffnung der nächsten Kerze ausgeführt; ab deren Schluss basiert das Ziel auf dem echten Kurs.
+if goLong
+    float stopPx = rangeLow - stopBuf * syminfo.mintick
+    float tp     = math.round_to_mintick(close + targetR * (close - stopPx))
+    tradeStop   := stopPx
+    tradeTarget := tp
+    tradesToday += 1
+    tags.put(bar_index + 1, TradeTag.new(stopPx, s1Long, s2, s3, s4, s5))
+    strategy.entry("Long", strategy.long, qty = contracts, comment = "Long", alert_message = f_entryMsg("buy", close, stopPx, tp))
+    strategy.exit("Long-Ausstieg", from_entry = "Long", stop = stopPx, limit = tp, comment_profit = "Ziel", comment_loss = "Stop", alert_message = f_exitMsg("tp_or_sl"))
+
+if goShort
+    float stopPx = rangeHigh + stopBuf * syminfo.mintick
+    float tp     = math.round_to_mintick(close - targetR * (stopPx - close))
+    tradeStop   := stopPx
+    tradeTarget := tp
+    tradesToday += 1
+    tags.put(bar_index + 1, TradeTag.new(stopPx, s1Short, s2, s3, s4, s5))
+    strategy.entry("Short", strategy.short, qty = contracts, comment = "Short", alert_message = f_entryMsg("sell", close, stopPx, tp))
+    strategy.exit("Short-Ausstieg", from_entry = "Short", stop = stopPx, limit = tp, comment_profit = "Ziel", comment_loss = "Stop", alert_message = f_exitMsg("tp_or_sl"))
+
+// ───────────────────────────── Darstellung ─────────────────────────────
+bool inPos        = strategy.position_size != 0
+bool blockedLong  = canEnter and longBreak and not longOK
+bool blockedShort = canEnter and shortBreak and not shortOK
+
+plot(inPos ? tradeStop : na, "Stop", color.new(color.red, 0), 2, plot.style_linebr)
+plot(inPos ? tradeTarget : na, "Ziel", color.new(color.green, 0), 2, plot.style_linebr)
+plotshape(goLong, "Long-Signal", shape.triangleup, location.belowbar, color.new(color.green, 0), size = size.small)
+plotshape(goShort, "Short-Signal", shape.triangledown, location.abovebar, color.new(color.red, 0), size = size.small)
+plotshape(blockedLong, "Long vom Filter blockiert", shape.xcross, location.belowbar, color.new(color.gray, 0), size = size.tiny)
+plotshape(blockedShort, "Short vom Filter blockiert", shape.xcross, location.abovebar, color.new(color.gray, 0), size = size.tiny)
+
+plot(f1PrevEma, "F1 Tages-EMA (Vortag)", display = display.data_window)
+plot(f2Day, "F2 Volatilitätsindex (Vortagesschluss)", display = display.data_window)
+plot(f3Day, "F3 Range-Breite ggü. Durchschnitt", display = display.data_window)
+plot(f4Adx, "F4 ADX (letzte abgeschlossene Kerze)", display = display.data_window)
+plot(f5Day, "F5 relatives Volumen über Nacht", display = display.data_window)
+
+// ───────────────────────────── Regime-Filter-Tabelle ─────────────────────────────
+color C_BG   = color.new(color.black, 25)
+color C_HEAD = color.new(color.gray, 40)
+color C_ON   = color.new(color.blue, 40)
+color C_PASS = color.new(color.green, 45)
+color C_FAIL = color.new(color.red, 45)
+color C_NA   = color.new(color.gray, 65)
+
+var table diag       = table.new(position.bottom_right, 5, 8, bgcolor = C_BG, border_color = color.new(color.gray, 70), border_width = 1)
+var bool  noteMerged = false
+
+f_cell(int col, int row, string txt, color bg) =>
+    table.cell(diag, col, row, txt, text_color = color.white, bgcolor = bg, text_size = size.small, text_halign = text.align_left)
+
+f_stateColor(int s) =>
+    s == 1 ? C_PASS : s == 0 ? C_FAIL : C_NA
+
+f_todayText(int s, float v, string fmt) =>
+    s == -1 ? "k. A." : (s == 1 ? "frei " : "blockiert ") + str.tostring(v, fmt)
+
+f_stats(int n, int w, float sumR) =>
+    float avgR = n > 0 ? sumR / n : 0.0
+    n == 0 ? "–" : str.tostring(n) + " · " + str.tostring(math.round(100.0 * w / n)) + " % · " + (avgR >= 0 ? "+" : "") + str.tostring(avgR, "0.00") + " R"
+
+if showTable and barstate.islast
+    string n1 = "1 Trend · Tages-EMA " + str.tostring(f1Len)
+    string n2 = "2 Volatilität · " + f2Sym + " " + str.tostring(f2Min) + " bis " + str.tostring(f2Max)
+    string n3 = "3 Range-Breite · " + str.tostring(f3Min) + " bis " + str.tostring(f3Max) + "x Ø"
+    string n4 = "4 ADX " + f4Tf + " · " + str.tostring(f4Min) + " bis " + str.tostring(f4Max)
+    string n5 = "5 Rel. Volumen Nacht · " + str.tostring(f5Min) + " bis " + str.tostring(f5Max)
+    string t1 = f1Valid ? (f1PrevClose > f1PrevEma ? "nur Longs" : f1PrevClose < f1PrevEma ? "nur Shorts" : "keine Trades") : "k. A."
+    int    c1 = f1Valid ? 1 : -1
+    array<string> names    = array.from(n1, n2, n3, n4, n5)
+    array<bool>   enabled  = array.from(useF1, useF2, useF3, useF4, useF5)
+    array<string> todayTxt = array.from(t1, f_todayText(s2, f2Day, "0.0"), f_todayText(s3, f3Day, "0.00"), f_todayText(s4, f4Adx, "0.0"), f_todayText(s5, f5Day, "0.00"))
+    array<int>    todaySt  = array.from(c1, s2, s3, s4, s5)
+
+    f_cell(0, 0, "Regime-Filter", C_HEAD)
+    f_cell(1, 0, "An", C_HEAD)
+    f_cell(2, 0, "Heute", C_HEAD)
+    f_cell(3, 0, "Durchgelassen: Trades · Treffer · Ø R", C_HEAD)
+    f_cell(4, 0, "Blockiert: Trades · Treffer · Ø R", C_HEAD)
+    for i = 0 to 4
+        f_cell(0, i + 1, names.get(i), C_BG)
+        f_cell(1, i + 1, enabled.get(i) ? "AN" : "aus", enabled.get(i) ? C_ON : C_BG)
+        f_cell(2, i + 1, todayTxt.get(i), f_stateColor(todaySt.get(i)))
+        f_cell(3, i + 1, f_stats(passN.get(i), passW.get(i), passR.get(i)), C_BG)
+        f_cell(4, i + 1, f_stats(failN.get(i), failW.get(i), failR.get(i)), C_BG)
+    f_cell(0, 6, "Alle Trades dieses Laufs", C_HEAD)
+    f_cell(1, 6, "", C_HEAD)
+    f_cell(2, 6, "", C_HEAD)
+    f_cell(3, 6, f_stats(allN, allW, allR), C_HEAD)
+    f_cell(4, 6, "gesamt " + (allR >= 0 ? "+" : "") + str.tostring(allR, "0.0") + " R", C_HEAD)
+    f_cell(0, 7, "R nach Kosten. Der Vergleich Durchgelassen/Blockiert ist nur in einem Lauf mit allen Filtern aus fair. Einen Filter durch Einschalten bestätigen.", C_BG)
+    if not noteMerged
+        table.merge_cells(diag, 0, 7, 4, 7)
+        noteMerged := true
